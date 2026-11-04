@@ -1,9 +1,10 @@
 """
 ava-recruitment-bot
-Bot Telegram de publication d'annonces de recrutement.
-- Génère 3-5 annonces variées au démarrage via Gemini API (fallback: Groq)
-- Les publie en rotation dans les groupes Telegram configurés
-- Publie toutes les heures (heure pile)
+Bot Telegram de publication d'annonces de recrutement via Telethon (API_ID / API_HASH / User Account).
+- Utilise Telethon pour poster en tant que compte utilisateur dans les groupes publics
+- Génère 3-5 annonces variées au démarrage via Gemini API (fallback: Groq / templates officiels)
+- Les publie en rotation dans les groupes Telegram configurés (@ofmva_fr, @jobonlinevas...)
+- Publication sécurisée avec délai aléatoire anti-flood
 - Reconnexion automatique infinie (Railway 24/7)
 """
 
@@ -12,13 +13,13 @@ import sys
 import json
 import asyncio
 import logging
+import random
 import time
 from datetime import datetime, timedelta
 
 import requests
-from telegram import Bot
-from telegram.error import TelegramError
-from telegram.constants import ParseMode
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 # ─── Logging vers stdout (Railway) ───────────────────────────────────────────
 logging.basicConfig(
@@ -26,17 +27,23 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-log = logging.getLogger("RecruitBot")
+log = logging.getLogger("RecruiterTelethon")
 
 # ─── Configuration depuis variables d'environnement ───────────────────────────
-BOT_TOKEN      = os.environ.get("TELEGRAM_TOKEN", "")
-TARGET_GROUPS  = [g.strip() for g in os.environ.get("TARGET_GROUPS", "").split(",") if g.strip()]
+API_ID         = int(os.environ.get("TELEGRAM_API_ID", "36121361"))
+API_HASH       = os.environ.get("TELEGRAM_API_HASH", "29263ae8f125a5dfb91491b63264d0e2").strip()
+STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+SESSION_FILE   = os.environ.get("TELEGRAM_SESSION_FILE", "recruiter")
+
+DEFAULT_GROUPS = "@ofmva_fr, @jobonlinevas, @ofmanagementgroupe"
+TARGET_GROUPS  = [g.strip() for g in os.environ.get("TARGET_GROUPS", DEFAULT_GROUPS).split(",") if g.strip()]
+
 POST_INTERVAL  = int(os.environ.get("POST_INTERVAL", "3600"))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
 NB_ANNONCES    = int(os.environ.get("NB_ANNONCES", "5"))
 
-# ─── EXEMPLES DE POSTS RÉFÉRENCE (style exact voulu par l'agence) ─────────────
+# ─── EXEMPLES DE POSTS RÉFÉRENCE (style exact de l'agence) ───────────────────
 EXEMPLES_REFERENCE = [
     """🚀 RECRUTEMENT : REJOINS NOTRE ÉQUIPE D'ASSISTANTS VIRTUELS (VA)
 
@@ -82,18 +89,14 @@ Bonne connexion internet et équipement adapté (PC/téléphone).
 Envoie-nous un message privé directement pour nous présenter ton parcours ! @rcruting_bot"""
 ]
 
-# ─── Annonces statiques de secours (si toutes les IA échouent) ───────────────
 ANNONCES_FALLBACK = EXEMPLES_REFERENCE.copy()
 
-# ─── Génération via Gemini API ────────────────────────────────────────────────
+# ─── Génération IA via Gemini ─────────────────────────────────────────────────
 def generate_via_gemini(prompt: str) -> str | None:
     if not GEMINI_API_KEY:
         return None
     try:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.95, "maxOutputTokens": 700}
@@ -108,17 +111,14 @@ def generate_via_gemini(prompt: str) -> str | None:
         log.warning(f"⚠️ Erreur Gemini : {e}")
     return None
 
-# ─── Génération via Groq (fallback) ──────────────────────────────────────────
+# ─── Génération IA via Groq (fallback) ───────────────────────────────────────
 def generate_via_groq(prompt: str) -> str | None:
     if not GROQ_API_KEY:
         return None
     try:
         res = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            },
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
             json={
                 "model": "llama3-8b-8192",
                 "messages": [{"role": "user", "content": prompt}],
@@ -136,7 +136,6 @@ def generate_via_groq(prompt: str) -> str | None:
         log.warning(f"⚠️ Erreur Groq : {e}")
     return None
 
-# ─── Prompt de génération basé sur les exemples de l'agence ──────────────────
 TYPES_POSTES = [
     ("Assistant Virtuel (VA) débutant", "motivant, accessible, met en avant la formation offerte"),
     ("Chatter expérimenté", "professionnel, valorise l'expérience et la commission élevée"),
@@ -151,129 +150,126 @@ def build_prompt(index: int) -> str:
 
     return f"""Tu es le responsable recrutement d'AVA Agency, une agence digitale française.
 
-Voici un exemple de post de recrutement que nous utilisons :
+Voici un exemple de post de recrutement officiel que nous utilisons :
 ---
 {exemple}
 ---
 
-Maintenant, génère un NOUVEAU post de recrutement pour le poste suivant : **{poste}**
+Génère un NOUVEAU post de recrutement percutant pour le poste : **{poste}**
 Style attendu : {style}
 
-Contraintes OBLIGATOIRES :
-- Garde exactement le même format et la même structure que l'exemple (émojis, sections, @rcruting_bot à la fin)
-- Le post doit se terminer par "Envoie-nous un message privé directement à @rcruting_bot"
-- Varie le titre, les formulations et les arguments par rapport à l'exemple
-- Reste professionnel, motivant et en français
+Contraintes STRICTES :
+- Garde le format structuré (émojis, sections, contact à la fin)
+- Se termine obligatoirement par "Envoie-nous un message privé directement pour passer ton premier entretien @rcruting_bot" (ou présenter ton parcours)
+- Français impeccable, captivant et professionnel
 - Maximum 25 lignes
-- Écris UNIQUEMENT le post, sans introduction ni commentaire."""
+- Renvoie UNIQUEMENT le texte du post, sans texte introductif."""
 
-# ─── Génération d'une annonce : Gemini → Groq → fallback ─────────────────────
 def generate_annonce(index: int) -> str:
     prompt = build_prompt(index)
-
-    text = generate_via_gemini(prompt)
+    text = generate_via_gemini(prompt) or generate_via_groq(prompt)
     if text:
         return text
-
-    text = generate_via_groq(prompt)
-    if text:
-        return text
-
-    log.warning(f"⚠️ IA indisponible pour annonce {index+1} — utilisation du post de référence")
+    log.warning(f"⚠️ IA indisponible pour annonce {index+1} — utilisation du modèle de base")
     return ANNONCES_FALLBACK[index % len(ANNONCES_FALLBACK)]
 
-# ─── Chargement des annonces au démarrage ────────────────────────────────────
 def load_annonces() -> list[str]:
     log.info(f"🤖 Génération de {NB_ANNONCES} annonces via IA (Gemini → Groq → fallback)...")
     annonces = []
     for i in range(NB_ANNONCES):
-        log.info(f"  → Génération annonce {i+1}/{NB_ANNONCES} (poste: {TYPES_POSTES[i % len(TYPES_POSTES)][0]})...")
-        annonce = generate_annonce(i)
-        annonces.append(annonce)
-        time.sleep(1.5)  # Anti-rate-limit
+        log.info(f"  → Génération annonce {i+1}/{NB_ANNONCES} ({TYPES_POSTES[i % len(TYPES_POSTES)][0]})...")
+        annonces.append(generate_annonce(i))
+        time.sleep(1.5)
     log.info(f"✅ {len(annonces)} annonces prêtes pour la rotation.")
     return annonces
 
-# ─── Publication dans les groupes Telegram ───────────────────────────────────
-async def publish_round(bot: Bot, annonces: list[str], annonce_index: int) -> int:
+# ─── Client Telethon ─────────────────────────────────────────────────────────
+def init_telethon_client() -> TelegramClient:
+    if STRING_SESSION:
+        log.info("🔑 Utilisation de StringSession depuis variable d'environnement")
+        return TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
+
+    # Chemin du fichier .session
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    session_path = os.path.join(base_dir, SESSION_FILE)
+    log.info(f"📁 Utilisation du fichier session : {session_path}.session")
+    return TelegramClient(session_path, API_ID, API_HASH)
+
+# ─── Envoi d'une tournée dans les groupes ────────────────────────────────────
+async def publish_round(client: TelegramClient, annonces: list[str], annonce_index: int) -> int:
     if not annonces:
         log.warning("⚠️ Aucune annonce disponible.")
         return annonce_index
 
     idx = annonce_index % len(annonces)
     annonce = annonces[idx]
-    horodatage = datetime.now().strftime("%d/%m/%Y %H:%M")
-    ref = f"REF-{datetime.now().strftime('%Y%m%d%H%M')}"
-
-    # Pas de footer visible pour garder le post naturel
-    full_message = annonce
-
     poste_name = TYPES_POSTES[idx % len(TYPES_POSTES)][0]
-    log.info(f"📢 Publication [{poste_name}] dans {len(TARGET_GROUPS)} groupe(s)...")
+
+    log.info(f"📢 Tournée de publication [{poste_name}] ({idx+1}/{len(annonces)}) dans {len(TARGET_GROUPS)} groupe(s)...")
 
     for groupe in TARGET_GROUPS:
         try:
-            await bot.send_message(
-                chat_id=groupe,
-                text=full_message,
-                disable_web_page_preview=True
-            )
-            log.info(f"  ✅ Envoyé dans {groupe}")
-            await asyncio.sleep(2)
-        except TelegramError as e:
-            log.error(f"  ❌ Erreur dans {groupe}: {e}")
+            await client.send_message(groupe, annonce)
+            log.info(f"  ✅ Posté avec succès dans {groupe}")
+            # Pause aléatoire anti-flood (6 à 12 secondes)
+            sleep_time = random.randint(6, 12)
+            await asyncio.sleep(sleep_time)
+        except Exception as e:
+            log.error(f"  ⚠️ Erreur envoi dans {groupe}: {e}")
 
     return annonce_index + 1
 
 # ─── Boucle principale ────────────────────────────────────────────────────────
 async def main_loop():
-    if not BOT_TOKEN:
-        log.error("❌ TELEGRAM_TOKEN non défini ! Configurez la variable d'environnement Railway.")
-        sys.exit(1)
-    if not TARGET_GROUPS:
-        log.error("❌ TARGET_GROUPS non défini ! Configurez les IDs des groupes (séparés par virgule).")
-        sys.exit(1)
+    log.info("=" * 60)
+    log.info("🚀 AVA Agency — Bot Recrutement Telethon (API_ID & API_HASH)")
+    log.info(f"   API_ID         : {API_ID}")
+    log.info(f"   Groupes cibles : {', '.join(TARGET_GROUPS)}")
+    log.info(f"   Intervalle     : {POST_INTERVAL}s ({POST_INTERVAL // 3600}h)")
+    log.info(f"   Gemini API     : {'✅ Activé' if GEMINI_API_KEY else '❌ Non configuré'}")
+    log.info(f"   Groq API       : {'✅ Activé' if GROQ_API_KEY else '❌ Non configuré'}")
+    log.info("=" * 60)
 
-    log.info("=" * 55)
-    log.info("🚀 AVA Agency — Bot Recrutement IA (Railway 24/7)")
-    log.info(f"   Groupes cibles   : {len(TARGET_GROUPS)}")
-    log.info(f"   Intervalle       : {POST_INTERVAL}s ({POST_INTERVAL // 3600}h)")
-    log.info(f"   Annonces IA      : {NB_ANNONCES} (Gemini → Groq → fallback)")
-    log.info(f"   Gemini API       : {'✅ Configurée' if GEMINI_API_KEY else '❌ Non configurée'}")
-    log.info(f"   Groq API         : {'✅ Configurée' if GROQ_API_KEY else '❌ Non configurée'}")
-    log.info("=" * 55)
+    client = init_telethon_client()
+    await client.connect()
 
-    bot = Bot(token=BOT_TOKEN)
+    if not await client.is_user_authorized():
+        log.critical("❌ Le compte Telegram n'est PAS autorisé ou la session est expirée !")
+        log.critical("Vérifiez le fichier recruiter.session ou la variable TELEGRAM_STRING_SESSION.")
+        return
+
+    me = await client.get_me()
+    log.info(f"✅ Connecté à Telegram en tant que : {me.first_name} (@{me.username or 'sans_username'}, Tel: +{me.phone})")
+
     annonces = load_annonces()
     annonce_index = 0
 
     while True:
         now = datetime.now()
 
-        # Publication immédiate
-        annonce_index = await publish_round(bot, annonces, annonce_index)
+        # Envoi de la tournée
+        annonce_index = await publish_round(client, annonces, annonce_index)
 
-        # Attente jusqu'à l'heure pile suivante (ou intervalle configuré)
+        # Pause jusqu'au prochain intervalle
         if POST_INTERVAL == 3600:
             next_run = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         else:
             next_run = now + timedelta(seconds=POST_INTERVAL)
 
         wait_seconds = max(10, (next_run - datetime.now()).total_seconds())
-        log.info(f"😴 Prochaine publication à {next_run.strftime('%H:%M:%S')} (attente: {int(wait_seconds)}s)")
+        log.info(f"😴 Prochaine tournée à {next_run.strftime('%H:%M:%S')} (attente: {int(wait_seconds)}s)")
         await asyncio.sleep(wait_seconds)
 
-# ─── Entry point avec redémarrage automatique ────────────────────────────────
 async def main():
     while True:
         try:
             await main_loop()
         except Exception as e:
-            log.error(f"💥 Erreur fatale : {e} — redémarrage dans 10s...")
-            await asyncio.sleep(10)
+            log.error(f"💥 Erreur dans main_loop: {e} — redémarrage dans 15s...")
+            await asyncio.sleep(15)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        log.info("🛑 Bot arrêté.")
+        log.info("🛑 Arrêté.")
