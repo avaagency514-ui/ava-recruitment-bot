@@ -327,6 +327,50 @@ def notify_discord_startup(phone: str, me_name: str, total_groups: int):
     except Exception as e:
         log.warning(f"Erreur notification startup Discord : {e}")
 
+def notify_discord_round_start(poste_name: str, total_targets: int, annonce_text: str):
+    if not DISCORD_BOT_TOKEN or not DISCORD_LOG_CHANNEL:
+        return
+    embed = {
+        "title": "🚀 Nouvelle Tournée en cours d'envoi...",
+        "description": f"Le bot commence à publier dans les **{total_targets} groupes Telegram**.",
+        "color": 0xF39C12,  # Orange
+        "fields": [
+            {"name": "🎯 Poste ciblé", "value": f"**{poste_name}**", "inline": True},
+            {"name": "👥 Cibles", "value": f"**{total_targets}** groupes de recrutement", "inline": True},
+            {"name": "📝 Texte généré par l'IA", "value": f"```{annonce_text[:850]}```", "inline": False}
+        ],
+        "footer": {"text": "AVA Agency — Bot Recrutement Telethon • Salon #log-rcrutement"},
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        requests.post(
+            f"https://discord.com/api/v10/channels/{DISCORD_LOG_CHANNEL}/messages",
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}", "Content-Type": "application/json"},
+            json={"embeds": [embed]},
+            timeout=10
+        )
+    except Exception:
+        pass
+
+def notify_discord_error(msg: str):
+    if not DISCORD_BOT_TOKEN or not DISCORD_LOG_CHANNEL:
+        return
+    embed = {
+        "title": "⚠️ Alerte Bot Recrutement",
+        "description": msg,
+        "color": 0xE74C3C,  # Rouge
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        requests.post(
+            f"https://discord.com/api/v10/channels/{DISCORD_LOG_CHANNEL}/messages",
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}", "Content-Type": "application/json"},
+            json={"embeds": [embed]},
+            timeout=10
+        )
+    except Exception:
+        pass
+
 def notify_discord_round(poste_name: str, annonce_text: str, total_targets: int, success_count: int, error_count: int, next_run_dt):
     if not DISCORD_BOT_TOKEN or not DISCORD_LOG_CHANNEL:
         return
@@ -366,6 +410,9 @@ async def publish_round(client: TelegramClient, annonces: list[str], annonce_ind
 
     log.info(f"📢 Début tournée [{poste_name}] ({idx+1}/{len(annonces)}) vers {len(target_groups)} groupe(s)...")
 
+    # Notification Discord immédiate du début de tournée
+    notify_discord_round_start(poste_name, len(target_groups), annonce)
+
     succes = 0
     erreurs = 0
 
@@ -400,6 +447,8 @@ async def main_loop():
 
     if not await client.is_user_authorized():
         log.critical("❌ Le compte Telegram n'est PAS autorisé ou la session est expirée !")
+        notify_discord_error("❌ Le compte Telegram n'est pas autorisé ou la session est expirée. Vérifiez recruiter.session.")
+        await asyncio.sleep(60)
         return
 
     me = await client.get_me()
@@ -435,8 +484,8 @@ async def main():
         try:
             await main_loop()
         except Exception as e:
-            log.error(f"💥 Erreur main_loop: {e} — reprise dans 15s...")
-            await asyncio.sleep(15)
+            log.error(f"💥 Erreur main_loop: {e} — reprise dans 30s...")
+            await asyncio.sleep(30)
 
 if __name__ == "__main__":
     try:
