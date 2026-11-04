@@ -5,8 +5,9 @@ Bot Telegram de publication d'annonces de recrutement via Telethon (API_ID / API
 - Fichier session : recruiter.session (pré-authentifié)
 - Charge automatiquement les 137 groupes de recrutement depuis groupes_scanned.json
 - Exclut automatiquement tous les groupes internes privés de l'agence AVA
-- Génère 5 annonces variées au démarrage via Gemini API (fallback: Groq / modèles officiels)
-- Délais aléatoires anti-flood (6 à 12s) entre chaque groupe
+- Génère 5 annonces variées via FreeLLM / Gemini API (fallback: modèles officiels)
+- Intervalle fixe : 20 minutes entre chaque tournée de publication
+- Délais aléatoires anti-flood (7 à 12s) entre chaque groupe
 - Support des Topics / Forums Telegram
 - Reconnexion automatique infinie (Railway 24/7)
 """
@@ -40,10 +41,14 @@ PHONE_NUMBER   = os.environ.get("TELEGRAM_PHONE", "+261381789477").strip()
 STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
 SESSION_FILE   = os.environ.get("TELEGRAM_SESSION_FILE", "recruiter")
 
-POST_INTERVAL  = int(os.environ.get("POST_INTERVAL", "3600"))
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
-NB_ANNONCES    = int(os.environ.get("NB_ANNONCES", "5"))
+# ⏱️ 20 minutes fixes entre chaque tournée (1200 secondes)
+POST_INTERVAL  = int(os.environ.get("POST_INTERVAL", "1200"))
+
+# Clés IA (Gemini ou FreeLLM) configurées dans les variables d'environnement
+GEMINI_API_KEY  = os.environ.get("GEMINI_API_KEY", "").strip()
+FREELLM_API_KEY = os.environ.get("FREELLM_API_KEY", "").strip()
+FREELLM_API_URL = os.environ.get("FREELLM_API_URL", "https://api.freellm.io/v1").rstrip("/")
+NB_ANNONCES     = int(os.environ.get("NB_ANNONCES", "5"))
 
 # Mots-clés pour exclure absolument les salons privés de l'agence AVA
 INTERNAL_EXCLUDED = [
@@ -55,14 +60,12 @@ INTERNAL_EXCLUDED = [
 
 # ─── Chargement des groupes cibles ───────────────────────────────────────────
 def load_target_groups():
-    # 1. Si TARGET_GROUPS est défini dans les variables d'environnement, on l'utilise en priorité
     env_groups = os.environ.get("TARGET_GROUPS", "").strip()
     if env_groups:
         groups = [g.strip() for g in env_groups.split(",") if g.strip()]
         log.info(f"🎯 {len(groups)} groupes configurés via variable TARGET_GROUPS.")
         return groups
 
-    # 2. Sinon, on charge depuis groupes_scanned.json
     base_dir = os.path.dirname(os.path.abspath(__file__))
     json_path = os.path.join(base_dir, "groupes_scanned.json")
     if os.path.exists(json_path):
@@ -72,7 +75,6 @@ def load_target_groups():
 
             raw_groups = data.get(PHONE_NUMBER, {}).get("groups", [])
             if not raw_groups:
-                # Essayer sans le '+' ou avec espaces
                 for key in data.keys():
                     if key.replace("+", "").replace(" ", "") in PHONE_NUMBER.replace("+", "").replace(" ", ""):
                         raw_groups = data[key].get("groups", [])
@@ -84,7 +86,6 @@ def load_target_groups():
                 entry = g.get("entry", "").strip()
                 if not entry:
                     continue
-                # Exclure les groupes internes privés de l'agence
                 if any(bad in title for bad in INTERNAL_EXCLUDED):
                     continue
                 filtered.append(entry)
@@ -95,9 +96,8 @@ def load_target_groups():
         except Exception as e:
             log.warning(f"⚠️ Erreur lecture groupes_scanned.json : {e}")
 
-    # 3. Fallback
     fallback = ["@ofmva_fr", "@jobonlinevas", "@ofmanagementgroupe"]
-    log.info(f"ℹ️ Utilisation des 3 groupes par défaut : {fallback}")
+    log.info(f"ℹ️ Utilisation des groupes par défaut : {fallback}")
     return fallback
 
 # ─── EXEMPLES DE POSTS RÉFÉRENCE ─────────────────────────────────────────────
@@ -148,7 +148,31 @@ Envoie-nous un message privé directement pour nous présenter ton parcours ! @r
 
 ANNONCES_FALLBACK = EXEMPLES_REFERENCE.copy()
 
-# ─── Génération IA via Gemini ─────────────────────────────────────────────────
+# ─── Génération IA via FreeLLM ────────────────────────────────────────────────
+def generate_via_freellm(prompt: str) -> str | None:
+    if not FREELLM_API_KEY:
+        return None
+    models = ["gemini-3.8-flash", "gemini-3.5-flash", "llama-3.3-70b-fp8-fast", "mistral-small-3.1-24b"]
+    for model_name in models:
+        try:
+            url = f"{FREELLM_API_URL}/chat/completions"
+            headers = {"Authorization": f"Bearer {FREELLM_API_KEY}", "Content-Type": "application/json"}
+            body = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.95
+            }
+            res = requests.post(url, headers=headers, json=body, timeout=20)
+            if res.status_code == 200:
+                data = res.json()
+                text = data["choices"][0]["message"]["content"].strip()
+                log.info(f"✅ Annonce générée via FreeLLM ({model_name})")
+                return text
+        except Exception:
+            continue
+    return None
+
+# ─── Génération IA via Gemini Direct ──────────────────────────────────────────
 def generate_via_gemini(prompt: str) -> str | None:
     if not GEMINI_API_KEY:
         return None
@@ -158,39 +182,13 @@ def generate_via_gemini(prompt: str) -> str | None:
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.95, "maxOutputTokens": 700}
         }
-        res = requests.post(url, json=body, timeout=25)
+        res = requests.post(url, json=body, timeout=20)
         if res.status_code == 200:
             text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            log.info("✅ Annonce générée via Gemini")
+            log.info("✅ Annonce générée via Gemini direct")
             return text
-        log.warning(f"⚠️ Gemini HTTP {res.status_code}: {res.text[:100]}")
-    except Exception as e:
-        log.warning(f"⚠️ Erreur Gemini : {e}")
-    return None
-
-# ─── Génération IA via Groq (fallback) ───────────────────────────────────────
-def generate_via_groq(prompt: str) -> str | None:
-    if not GROQ_API_KEY:
-        return None
-    try:
-        res = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": "llama3-8b-8192",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.95,
-                "max_tokens": 700
-            },
-            timeout=25
-        )
-        if res.status_code == 200:
-            text = res.json()["choices"][0]["message"]["content"].strip()
-            log.info("✅ Annonce générée via Groq (fallback)")
-            return text
-        log.warning(f"⚠️ Groq HTTP {res.status_code}: {res.text[:100]}")
-    except Exception as e:
-        log.warning(f"⚠️ Erreur Groq : {e}")
+    except Exception:
+        pass
     return None
 
 TYPES_POSTES = [
@@ -224,19 +222,19 @@ Contraintes STRICTES :
 
 def generate_annonce(index: int) -> str:
     prompt = build_prompt(index)
-    text = generate_via_gemini(prompt) or generate_via_groq(prompt)
+    text = generate_via_freellm(prompt) or generate_via_gemini(prompt)
     if text:
         return text
     log.warning(f"⚠️ IA indisponible pour annonce {index+1} — utilisation du modèle officiel")
     return ANNONCES_FALLBACK[index % len(ANNONCES_FALLBACK)]
 
 def load_annonces() -> list[str]:
-    log.info(f"🤖 Génération de {NB_ANNONCES} annonces via IA...")
+    log.info(f"🤖 Génération de {NB_ANNONCES} annonces via IA (FreeLLM / Gemini)...")
     annonces = []
     for i in range(NB_ANNONCES):
         log.info(f"  → Génération annonce {i+1}/{NB_ANNONCES} ({TYPES_POSTES[i % len(TYPES_POSTES)][0]})...")
         annonces.append(generate_annonce(i))
-        time.sleep(1.5)
+        time.sleep(1)
     log.info(f"✅ {len(annonces)} annonces prêtes pour la rotation.")
     return annonces
 
@@ -266,17 +264,14 @@ async def send_to_target(client: TelegramClient, entry: str, msg: str):
         group_name = g.strip()
         topic_id = int(t.strip()) if t.strip().isdigit() else None
 
-    # Envoi direct vers topic précis
     if topic_id:
         target = int(group_name) if str(group_name).lstrip('-').isdigit() else group_name
         await client.send_message(target, msg, reply_to=topic_id)
         return
 
-    # Groupe ou Forum standard
     target = int(group_name) if str(group_name).lstrip('-').isdigit() else group_name
     entity = await client.get_entity(target)
 
-    # Si c'est un Forum (Topics)
     if getattr(entity, 'forum', False):
         reply_to_msg_id = 1
         try:
@@ -313,26 +308,25 @@ async def publish_round(client: TelegramClient, annonces: list[str], annonce_ind
             await send_to_target(client, entry, annonce)
             succes += 1
             log.info(f"  ✅ Posté dans {entry} ({succes}/{len(target_groups)})")
-            # Pause anti-flood aléatoire (7 à 12 secondes)
             await asyncio.sleep(random.randint(7, 12))
         except Exception as e:
             erreurs += 1
             log.warning(f"  ⚠️ Erreur envoi {entry} : {str(e)[:100]}")
             await asyncio.sleep(3)
 
-    log.info(f"🏁 Tournée terminée : {succes} envoyés, {erreurs} ignorés/erreurs.")
+    log.info(f"🏁 Tournée terminée : {succes} envoyés, {erreurs} erreurs.")
     return annonce_index + 1
 
-# ─── Boucle principale ────────────────────────────────────────────────────────
+# ─── Boucle principale (20 minutes fixes) ────────────────────────────────────
 async def main_loop():
     target_groups = load_target_groups()
 
     log.info("=" * 65)
-    log.info("🚀 AVA Agency — Bot Recrutement Telethon (API_ID & API_HASH)")
+    log.info("🚀 AVA Agency — Bot Recrutement Telethon (20 min fixes)")
     log.info(f"   Compte         : {PHONE_NUMBER}")
     log.info(f"   Groupes cibles : {len(target_groups)} groupes chargés")
-    log.info(f"   Intervalle     : {POST_INTERVAL}s ({POST_INTERVAL // 3600}h)")
-    log.info(f"   Gemini API     : {'✅ Activé' if GEMINI_API_KEY else '❌ Modèles officiels'}")
+    log.info(f"   Intervalle     : {POST_INTERVAL}s (20 minutes fixes)")
+    log.info(f"   Moteur IA      : FreeLLM & Gemini API intégrés")
     log.info("=" * 65)
 
     client = init_telethon_client()
@@ -354,14 +348,10 @@ async def main_loop():
         # Envoi de la tournée
         annonce_index = await publish_round(client, annonces, annonce_index, target_groups)
 
-        # Attente jusqu'à l'intervalle configuré
-        if POST_INTERVAL == 3600:
-            next_run = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-        else:
-            next_run = now + timedelta(seconds=POST_INTERVAL)
-
+        # ⏱️ Pause de 20 minutes fixes (1200 secondes)
+        next_run = now + timedelta(seconds=POST_INTERVAL)
         wait_seconds = max(10, (next_run - datetime.now()).total_seconds())
-        log.info(f"😴 Prochaine tournée à {next_run.strftime('%H:%M:%S')} (pause: {int(wait_seconds)}s)")
+        log.info(f"😴 Prochaine tournée dans 20 minutes (à {next_run.strftime('%H:%M:%S')})")
         await asyncio.sleep(wait_seconds)
 
 async def main():
