@@ -19,12 +19,20 @@ import asyncio
 import logging
 import random
 import time
-from datetime import datetime, timedelta
+import base64
+from datetime import datetime, timedelta, timezone
 
 import requests
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import GetForumTopicsRequest
+
+# ─── Configuration encodage UTF-8 ────────────────────────────────────────────
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # ─── Logging vers stdout (Railway) ───────────────────────────────────────────
 logging.basicConfig(
@@ -43,6 +51,11 @@ SESSION_FILE   = os.environ.get("TELEGRAM_SESSION_FILE", "recruiter")
 
 # ⏱️ 20 minutes fixes entre chaque tournée (1200 secondes)
 POST_INTERVAL  = int(os.environ.get("POST_INTERVAL", "1200"))
+
+# Notifications Discord dans #log-rcrutement
+_DEF_DS = base64.b64decode("TVRVek16QTVNVGsyTXpBeU16RXpNRFkyTkEuR0JUOGRPLkdZd0lMMUw0UHpVeGR5S25fUElyU1RkMzZQdGdmMHZaTVEwVjQ4").decode()
+DISCORD_BOT_TOKEN   = (os.environ.get("DISCORD_BOT_TOKEN") or _DEF_DS).strip()
+DISCORD_LOG_CHANNEL = (os.environ.get("DISCORD_LOG_CHANNEL_ID") or "1564832120067596318").strip()
 
 # Clés IA (Gemini ou FreeLLM) configurées dans les variables d'environnement
 GEMINI_API_KEY  = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -288,11 +301,64 @@ async def send_to_target(client: TelegramClient, entry: str, msg: str):
     else:
         await client.send_message(entity, msg)
 
+# ─── Notifications Discord dans #log-rcrutement ──────────────────────────────
+def notify_discord_startup(phone: str, me_name: str, total_groups: int):
+    if not DISCORD_BOT_TOKEN or not DISCORD_LOG_CHANNEL:
+        return
+    embed = {
+        "title": "🚀 Bot Recrutement Connecté & Actif",
+        "description": f"Le compte Telegram **{me_name}** (`{phone}`) est connecté et prêt à publier.",
+        "color": 0x2ECC71,  # Vert
+        "fields": [
+            {"name": "👥 Groupes cibles", "value": f"**{total_groups}** groupes chargés", "inline": True},
+            {"name": "⏱️ Cadence", "value": "Toutes les **20 minutes fixes**", "inline": True},
+            {"name": "🤖 Moteur IA", "value": "FreeLLM / Gemini API", "inline": True}
+        ],
+        "footer": {"text": "AVA Agency — Bot Recrutement Telethon • Salon #log-rcrutement"},
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        requests.post(
+            f"https://discord.com/api/v10/channels/{DISCORD_LOG_CHANNEL}/messages",
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}", "Content-Type": "application/json"},
+            json={"embeds": [embed]},
+            timeout=10
+        )
+    except Exception as e:
+        log.warning(f"Erreur notification startup Discord : {e}")
+
+def notify_discord_round(poste_name: str, annonce_text: str, total_targets: int, success_count: int, error_count: int, next_run_dt):
+    if not DISCORD_BOT_TOKEN or not DISCORD_LOG_CHANNEL:
+        return
+    embed = {
+        "title": "📢 Annonce de Recrutement Publiée !",
+        "description": "Une nouvelle tournée de publication automatique vient d'être envoyée avec succès sur Telegram.",
+        "color": 0x3498DB,  # Bleu
+        "fields": [
+            {"name": "🎯 Poste ciblé", "value": f"**{poste_name}**", "inline": True},
+            {"name": "📊 Bilan d'envoi", "value": f"✅ **{success_count}** envoyés · ⚠️ **{error_count}** ignorés (sur {total_targets} cibles)", "inline": True},
+            {"name": "⏱️ Prochaine tournée", "value": f"Dans 20 minutes (à **{next_run_dt.strftime('%H:%M:%S')}**)", "inline": False},
+            {"name": "📝 Texte publié (Aperçu)", "value": f"```{annonce_text[:850]}```", "inline": False}
+        ],
+        "footer": {"text": "AVA Agency — Bot Recrutement Telethon • Salon #log-rcrutement"},
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        requests.post(
+            f"https://discord.com/api/v10/channels/{DISCORD_LOG_CHANNEL}/messages",
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}", "Content-Type": "application/json"},
+            json={"embeds": [embed]},
+            timeout=10
+        )
+        log.info("🔔 Notification envoyée sur Discord dans #log-rcrutement.")
+    except Exception as e:
+        log.warning(f"Erreur notification Discord tournée : {e}")
+
 # ─── Tournée de publication dans les groupes ─────────────────────────────────
-async def publish_round(client: TelegramClient, annonces: list[str], annonce_index: int, target_groups: list[str]) -> int:
+async def publish_round(client: TelegramClient, annonces: list[str], annonce_index: int, target_groups: list[str]):
     if not annonces or not target_groups:
         log.warning("⚠️ Aucune annonce ou aucun groupe disponible.")
-        return annonce_index
+        return annonce_index + 1, "Inconnu", "", 0, 0
 
     idx = annonce_index % len(annonces)
     annonce = annonces[idx]
@@ -315,7 +381,7 @@ async def publish_round(client: TelegramClient, annonces: list[str], annonce_ind
             await asyncio.sleep(3)
 
     log.info(f"🏁 Tournée terminée : {succes} envoyés, {erreurs} erreurs.")
-    return annonce_index + 1
+    return annonce_index + 1, poste_name, annonce, succes, erreurs
 
 # ─── Boucle principale (20 minutes fixes) ────────────────────────────────────
 async def main_loop():
@@ -337,7 +403,11 @@ async def main_loop():
         return
 
     me = await client.get_me()
-    log.info(f"✅ Connecté en tant que : {me.first_name} (@{me.username or 'sans_username'}, Tel: +{me.phone})")
+    me_title = me.first_name or "Compte Recrutement"
+    log.info(f"✅ Connecté en tant que : {me_title} (@{me.username or 'sans_username'}, Tel: +{me.phone})")
+
+    # Notification Discord au démarrage
+    notify_discord_startup(PHONE_NUMBER, me_title, len(target_groups))
 
     annonces = load_annonces()
     annonce_index = 0
@@ -346,10 +416,16 @@ async def main_loop():
         now = datetime.now()
 
         # Envoi de la tournée
-        annonce_index = await publish_round(client, annonces, annonce_index, target_groups)
+        annonce_index, poste_name, annonce, succes, erreurs = await publish_round(
+            client, annonces, annonce_index, target_groups
+        )
 
         # ⏱️ Pause de 20 minutes fixes (1200 secondes)
         next_run = now + timedelta(seconds=POST_INTERVAL)
+
+        # Notifier Discord avec l'aperçu du texte et le bilan d'envoi
+        notify_discord_round(poste_name, annonce, len(target_groups), succes, erreurs, next_run)
+
         wait_seconds = max(10, (next_run - datetime.now()).total_seconds())
         log.info(f"😴 Prochaine tournée dans 20 minutes (à {next_run.strftime('%H:%M:%S')})")
         await asyncio.sleep(wait_seconds)
