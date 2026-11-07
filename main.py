@@ -459,6 +459,17 @@ def notify_discord_round(poste_name: str, annonce_text: str, total_targets: int,
         log.warning(f"Erreur notification Discord tournée : {e}")
 
 # ─── Tournée de publication dans les groupes ─────────────────────────────────
+async def ensure_connected(client: TelegramClient):
+    if not client.is_connected():
+        log.info("🔌 Client déconnecté, tentative de reconnexion...")
+        try:
+            await client.connect()
+            log.info("✅ Client reconnecté avec succès !")
+        except Exception as e:
+            log.error(f"❌ Échec de reconnexion : {e}")
+            return False
+    return True
+
 async def publish_round(client: TelegramClient, poste_name: str, annonce: str, target_groups: list[str]):
     if not annonce or not target_groups:
         log.warning("⚠️ Aucune annonce ou aucun groupe disponible.")
@@ -471,16 +482,34 @@ async def publish_round(client: TelegramClient, poste_name: str, annonce: str, t
 
     succes = 0
     erreurs = 0
+    consecutive_disconnects = 0
 
     for entry in target_groups:
+        connected = await ensure_connected(client)
+        if not connected:
+            consecutive_disconnects += 1
+            if consecutive_disconnects >= 3:
+                log.critical("❌ Impossible de se reconnecter après 3 tentatives consécutives. Arrêt anticipé de la tournée.")
+                notify_discord_error("❌ Perte de connexion Telegram (session invalide ou déconnectée). Veuillez vérifier le compte.")
+                break
+
         try:
             await send_to_target(client, entry, annonce)
             succes += 1
+            consecutive_disconnects = 0
             log.info(f"  ✅ Posté dans {entry} ({succes}/{len(target_groups)})")
             await asyncio.sleep(random.randint(7, 12))
         except Exception as e:
             erreurs += 1
-            log.warning(f"  ⚠️ Erreur envoi {entry} : {str(e)[:100]}")
+            err_msg = str(e)
+            log.warning(f"  ⚠️ Erreur envoi {entry} : {err_msg[:100]}")
+            if "disconnected" in err_msg.lower() or "auth" in err_msg.lower():
+                consecutive_disconnects += 1
+                if not await ensure_connected(client):
+                    if consecutive_disconnects >= 3:
+                        log.critical("❌ Session Telegram révoquée ou déconnectée. Arrêt de la tournée.")
+                        notify_discord_error(f"⚠️ Alerte Telegram : Session déconnectée ({err_msg[:80]}). Reconnexion requise.")
+                        break
             await asyncio.sleep(3)
 
     log.info(f"🏁 Tournée terminée : {succes} envoyés, {erreurs} erreurs.")
