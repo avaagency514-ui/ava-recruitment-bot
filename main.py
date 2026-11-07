@@ -5,7 +5,9 @@ Bot Telegram de publication d'annonces de recrutement via Telethon (API_ID / API
 - Fichier session : recruiter.session (pré-authentifié)
 - Charge automatiquement les 137 groupes de recrutement depuis groupes_scanned.json
 - Exclut automatiquement tous les groupes internes privés de l'agence AVA
-- Génère 5 annonces variées via FreeLLM / Gemini API (fallback: modèles officiels)
+- 5 modèles officiels de recrutement 100% VA (Instagram, Facebook, Jailbreak, Twitter, Twitter & Threads)
+- Rémunération au sub, paiement toutes les 2 semaines en Crypto USDT, contact @rcruting_bot
+- Diffusion aléatoire à chaque tournée
 - Intervalle fixe : 20 minutes entre chaque tournée de publication
 - Délais aléatoires anti-flood (7 à 12s) entre chaque groupe
 - Support des Topics / Forums Telegram
@@ -57,12 +59,6 @@ _DEF_DS = base64.b64decode("TVRVek16QTVNVGsyTXpBeU16RXpNRFkyTkEuR0JUOGRPLkdZd0lM
 DISCORD_BOT_TOKEN   = (os.environ.get("DISCORD_BOT_TOKEN") or _DEF_DS).strip()
 DISCORD_LOG_CHANNEL = (os.environ.get("DISCORD_LOG_CHANNEL_ID") or "1564832120067596318").strip()
 
-# Clés IA (Gemini ou FreeLLM) configurées dans les variables d'environnement
-GEMINI_API_KEY  = os.environ.get("GEMINI_API_KEY", "").strip()
-FREELLM_API_KEY = os.environ.get("FREELLM_API_KEY", "").strip()
-FREELLM_API_URL = os.environ.get("FREELLM_API_URL", "https://api.freellm.io/v1").rstrip("/")
-NB_ANNONCES     = int(os.environ.get("NB_ANNONCES", "5"))
-
 # Mots-clés pour exclure absolument les salons privés de l'agence AVA
 INTERNAL_EXCLUDED = [
     "ava agency", "ava ", "kim", "isabella", "isabele", "nailys",
@@ -113,143 +109,171 @@ def load_target_groups():
     log.info(f"ℹ️ Utilisation des groupes par défaut : {fallback}")
     return fallback
 
-# ─── EXEMPLES DE POSTS RÉFÉRENCE ─────────────────────────────────────────────
-EXEMPLES_REFERENCE = [
-    """🚀 RECRUTEMENT : REJOINS NOTRE ÉQUIPE D'ASSISTANTS VIRTUELS (VA)
+# ─── LES 5 ANNONCES OFFICIELLES 100% VA ───────────────────────────────────────
+VA_OFFICIAL_TEMPLATES = [
+    {
+        "id": "insta",
+        "poste": "VA Instagram",
+        "texte": """📢 RECRUTEMENT – INSTAGRAM !
 
-Notre agence s'agrandit et nous recherchons des VAs motivés et rigoureux pour gérer et développer nos canaux de trafic.
+Tu souhaites travailler à distance directement depuis ton smartphone ? Nous recherchons de nouveaux profils pour développer notre équipe spécialisée dans la gestion et le développement de comptes Instagram !
 
-💼 Ce que nous t'offrons :
+📩 Contact : @rcruting_bot 📩 
 
-🎓 Formation complète offerte : Pas besoin d'expérience préalable, nous te formons à nos méthodes.
+💰 RÉMUNÉRATION & MODALITÉS :
+- Rémunération au sub (au nombre d'abonnés qualifiés générés) 🎯
+- Jusqu'à 350 USDT selon tes performances
+- Paiement toutes les 2 semaines 📆
+- Règlement sécurisé en Crypto USDT 💵
+- Bonus et primes de résultats 🤑
+- Possibilités d'évolution rapide
 
-💵 Rémunération claire & transparente : Système de paie bimensuel avec conservation de tes points et primes de performance.
+📱 MATÉRIEL :
+- iPhone et Android acceptés
+- Jailbreak = un plus, mais pas obligatoire
+- Connexion Internet stable
 
-🏠 100 % à distance : Travaille depuis chez toi, avec ton ordinateur/smartphone et une bonne connexion.
+🔥 PROFIL RECHERCHÉ :
+- Débutants acceptés
+- Bonne disponibilité
+- Sérieux et régularité
+- Envie d'apprendre et de progresser
 
-📈 Perspectives d'évolution : Possibilité de passer Manager selon tes résultats.
+🎓 ACCOMPAGNEMENT :
+- Formation complète
+- Stratégies Instagram performantes 📈
+- Suivi personnalisé par des Managers
+- Calls et accompagnement régulier
 
-📋 Profil recherché :
+Nous recherchons des personnes motivées, prêtes à s'investir et à évoluer avec nous sur le long terme.
 
-Rigoureux(se), autonome et à l'écoute des consignes.
-À l'aise avec les réseaux sociaux et la messagerie Telegram.
-Disponible quotidiennement.
+📩 Intéressé(e) ? Envoie un DM à @rcruting_bot avec une petite présentation de toi ! 📩"""
+    },
+    {
+        "id": "facebook",
+        "poste": "VA Facebook / Réseaux Sociaux",
+        "texte": """📢 RECRUTEMENT — VA FACEBOOK / RÉSEAUX SOCIAUX
 
-📩 Comment postuler ?
-Envoie-nous un message privé directement pour passer ton premier entretien @rcruting_bot""",
+Tu publies nos vidéos sur une page créée avec ton propre compte. Aucune expérience requise : formation complète assurée sur Discord.
 
-    """🔥 RECRUTEMENT CHATTER EXPÉRIMENTÉ(E) — REJOINS NOTRE AGENCE !
+💰 RÉMUNÉRATION AU SUB :
+Plus tu génères de subs (abonnés qualifiés), plus tu gagnes. Possibilité de dépasser 500 USDT par session de 2 semaines, sans aucun plafond.
 
-Tu maîtrises l'art de la discussion, de l'engagement et de la conversion sur les réseaux sociaux ? Notre agence cherche des chatters motivés et talentueux pour dynamiser ses comptes.
+📆 PAIEMENT & MODALITÉS :
+- Paiement garanti toutes les 2 semaines (tous les 14 jours).
+- Paiement par Crypto USDT (TRC-20 / Solana).
+- Rémunération 100% basée sur les subs générés.
 
-💰 Une rémunération sur-mesure :
+⚠️ CRITÈRES DE QUALITÉ :
+Seuls les subs issus de zones ciblées (USA, UK, Canada, Europe) comptent. Tracking transparent et vérifiable en direct.
 
-Pourcentage selon ton expérience : Ici, tes compétences sont valorisées à leur juste valeur. Plus tu as d'expérience et de résultats, plus ton pourcentage de commission est élevé !
+📱 MATÉRIEL :
+Smartphone + 4G/5G suffisent. Vidéos, formation et lien personnel fournis par l'agence.
 
-Paiements réguliers, sécurisés et transparents.
+✅ Recherche de profils sérieux, motivés et réguliers.
 
-💼 Profil recherché :
+✉️ Contacte @rcruting_bot en message privé pour postuler !"""
+    },
+    {
+        "id": "jailbreak",
+        "poste": "VA Instagram Jailbreak",
+        "texte": """🔓 RECRUTEMENT VA — IPHONE JAILBREAKÉ 🔓
 
-Expérience préalable exigée en tant que chatter (gestion de communautés ou de profils).
-Excellente aisance relationnelle et rédactionnelle.
-Sérieux, rigoureux et disponible.
-Bonne connexion internet et équipement adapté (PC/téléphone).
+💸 JUSQU'À 300 USDT / SESSION DE 2 SEMAINES
 
-📩 Comment postuler ?
-Envoie-nous un message privé directement pour nous présenter ton parcours ! @rcruting_bot"""
+💰 Rémunération au sub (nombre d'abonnements qualifiés)
+💵 Payé toutes les 2 semaines en Crypto USDT
+✅ iPhone jailbreaké obligatoire
+🇺🇸 Marché américain à fort volume
+⏰ 1 à 2h par jour seulement
+📈 Outils automatisés et accompagnement fournis
+
+🔥 Les places partent très vite ! Contacte @rcruting_bot en DM pour rejoindre l'équipe."""
+    },
+    {
+        "id": "twitter",
+        "poste": "VA Twitter / X (Marché FR 🇫🇷)",
+        "texte": """📍 RECRUTEMENT VA TWITTER / X (UNIQUEMENT 🇲🇬 🇧🇯 🇨🇲)
+
+Nous recrutons des personnes motivées pour gérer des comptes Twitter / X : création de comptes, publication de contenu, interactions et chatting.
+
+💰 RÉMUNÉRATION AU NOMBRE D'ABONNEMENTS (SUBS) :
+• Rémunération basée sur le nombre de subs générés
+• Paiement toutes les 2 semaines
+• Règlement en Crypto USDT
+• Tracking clair, fiable et transparent
+• Très bonne rémunération pour les profils performants
+
+📈 OPPORTUNITÉS D’ÉVOLUTION :
+• Plus de responsabilités et primes d'excellence
+• Meilleures conditions de rémunération au mérite
+• Possibilité d’évoluer au sein de l'agence
+
+🎯 PROFIL RECHERCHÉ :
+• Ouvert à tous (débutants motivés acceptés)
+• À l’aise avec Twitter / X et la communication écrite
+• Sérieux, motivé et régulier
+• Formation complète fournie
+
+📩 Intéressé(e) ? Envoie un DM à @rcruting_bot avec ta présentation ! (Marché FR 🇫🇷)"""
+    },
+    {
+        "id": "xthreads",
+        "poste": "VA Twitter & Threads",
+        "texte": """🚀 RECRUTEMENT — VA X (TWITTER) & THREADS 🚀
+
+Je cherche des profils expérimentés pour gérer et scaler du trafic via X (Twitter) + Threads. 📱&📱
+
+⚡️ Pourquoi nous rejoindre :
+– Stratégie déjà prête + process clair et rodé
+– Contenu + angles optimisés fournis
+– Environnement orienté performance (on scale ce qui marche)
+– Possibilité d’évolution + missions supplémentaires
+
+---
+💼 Mission :
+– Analyser les meilleurs posts (X + Threads)
+– Programmer les contenus sur 7 jours
+– Optimiser le reach & l’engagement
+– Analyser les résultats + reporting
+
+⌛️ Temps de travail :
+– ~4h30 / semaine
+– 1 jour fixe / semaine (tu choisis ton créneau)
+
+---
+💵 Rémunération & Paiement :
+– Rémunération au sub (selon le volume d'abonnés et de trafic converti)
+– Paiement garanti toutes les 2 semaines
+– Règlement en Crypto USDT
+– Évolution possible + cumul avec d’autres missions au sein de l'agence
+
+---
+⚠️ Profil recherché :
+– Expérience réelle sur les réseaux sociaux 
+– À l’aise avec X / Threads (growth, contenu, hooks)
+– Autonome, rapide, orienté résultats
+– Ordinateur obligatoire 💻
+
+⭐ On cherche des profils solides qui veulent performer et évoluer. Pas de débutants.
+
+---
+📩 Pour postuler :
+
+DM @rcruting_bot pour postuler ! 📈"""
+    }
 ]
 
-ANNONCES_FALLBACK = EXEMPLES_REFERENCE.copy()
+# Tirage aléatoire sans répétition immédiate (deck mélangé)
+current_deck = []
 
-# ─── Génération IA via FreeLLM ────────────────────────────────────────────────
-def generate_via_freellm(prompt: str) -> str | None:
-    if not FREELLM_API_KEY:
-        return None
-    models = ["gemini-3.8-flash", "gemini-3.5-flash", "llama-3.3-70b-fp8-fast", "mistral-small-3.1-24b"]
-    for model_name in models:
-        try:
-            url = f"{FREELLM_API_URL}/chat/completions"
-            headers = {"Authorization": f"Bearer {FREELLM_API_KEY}", "Content-Type": "application/json"}
-            body = {
-                "model": model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.95
-            }
-            res = requests.post(url, headers=headers, json=body, timeout=20)
-            if res.status_code == 200:
-                data = res.json()
-                text = data["choices"][0]["message"]["content"].strip()
-                log.info(f"✅ Annonce générée via FreeLLM ({model_name})")
-                return text
-        except Exception:
-            continue
-    return None
-
-# ─── Génération IA via Gemini Direct ──────────────────────────────────────────
-def generate_via_gemini(prompt: str) -> str | None:
-    if not GEMINI_API_KEY:
-        return None
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-        body = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.95, "maxOutputTokens": 700}
-        }
-        res = requests.post(url, json=body, timeout=20)
-        if res.status_code == 200:
-            text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            log.info("✅ Annonce générée via Gemini direct")
-            return text
-    except Exception:
-        pass
-    return None
-
-TYPES_POSTES = [
-    ("Assistant Virtuel (VA) débutant", "motivant, accessible, met en avant la formation offerte"),
-    ("Chatter expérimenté", "professionnel, valorise l'expérience et la commission élevée"),
-    ("VA Instagram mobile (iPhone)", "dynamique, met en avant la flexibilité et le paiement crypto"),
-    ("VA Instagram sur PC", "technique, met en avant la puissance du PC et les gains"),
-    ("Manager en devenir", "ambitieux, met en avant l'évolution de carrière possible"),
-]
-
-def build_prompt(index: int) -> str:
-    poste, style = TYPES_POSTES[index % len(TYPES_POSTES)]
-    exemple = EXEMPLES_REFERENCE[index % len(EXEMPLES_REFERENCE)]
-
-    return f"""Tu es le responsable recrutement d'AVA Agency, une agence digitale française.
-
-Voici un exemple de post de recrutement officiel que nous utilisons :
----
-{exemple}
----
-
-Génère un NOUVEAU post de recrutement percutant pour le poste : **{poste}**
-Style attendu : {style}
-
-Contraintes STRICTES :
-- Garde le format structuré (émojis, sections, contact à la fin)
-- Se termine obligatoirement par "Envoie-nous un message privé directement pour passer ton premier entretien @rcruting_bot" (ou présenter ton parcours)
-- Français impeccable, captivant et professionnel
-- Maximum 25 lignes
-- Renvoie UNIQUEMENT le texte du post, sans texte introductif."""
-
-def generate_annonce(index: int) -> str:
-    prompt = build_prompt(index)
-    text = generate_via_freellm(prompt) or generate_via_gemini(prompt)
-    if text:
-        return text
-    log.warning(f"⚠️ IA indisponible pour annonce {index+1} — utilisation du modèle officiel")
-    return ANNONCES_FALLBACK[index % len(ANNONCES_FALLBACK)]
-
-def load_annonces() -> list[str]:
-    log.info(f"🤖 Génération de {NB_ANNONCES} annonces via IA (FreeLLM / Gemini)...")
-    annonces = []
-    for i in range(NB_ANNONCES):
-        log.info(f"  → Génération annonce {i+1}/{NB_ANNONCES} ({TYPES_POSTES[i % len(TYPES_POSTES)][0]})...")
-        annonces.append(generate_annonce(i))
-        time.sleep(1)
-    log.info(f"✅ {len(annonces)} annonces prêtes pour la rotation.")
-    return annonces
+def get_next_random_template():
+    global current_deck
+    if not current_deck:
+        current_deck = VA_OFFICIAL_TEMPLATES.copy()
+        random.shuffle(current_deck)
+        log.info("🎲 Nouveau deck de 5 annonces VA mélangé pour la diffusion aléatoire.")
+    return current_deck.pop()
 
 # ─── Client Telethon ─────────────────────────────────────────────────────────
 def init_telethon_client() -> TelegramClient:
@@ -312,7 +336,7 @@ def notify_discord_startup(phone: str, me_name: str, total_groups: int):
         "fields": [
             {"name": "👥 Groupes cibles", "value": f"**{total_groups}** groupes chargés", "inline": True},
             {"name": "⏱️ Cadence", "value": "Toutes les **20 minutes fixes**", "inline": True},
-            {"name": "🤖 Moteur IA", "value": "FreeLLM / Gemini API", "inline": True}
+            {"name": "🎲 Rotation", "value": "5 modèles VA officiels (aléatoire)", "inline": True}
         ],
         "footer": {"text": "AVA Agency — Bot Recrutement Telethon • Salon #log-rcrutement"},
         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -337,7 +361,7 @@ def notify_discord_round_start(poste_name: str, total_targets: int, annonce_text
         "fields": [
             {"name": "🎯 Poste ciblé", "value": f"**{poste_name}**", "inline": True},
             {"name": "👥 Cibles", "value": f"**{total_targets}** groupes de recrutement", "inline": True},
-            {"name": "📝 Texte généré par l'IA", "value": f"```{annonce_text[:850]}```", "inline": False}
+            {"name": "📝 Annonce officielle", "value": f"```{annonce_text[:850]}```", "inline": False}
         ],
         "footer": {"text": "AVA Agency — Bot Recrutement Telethon • Salon #log-rcrutement"},
         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -399,16 +423,12 @@ def notify_discord_round(poste_name: str, annonce_text: str, total_targets: int,
         log.warning(f"Erreur notification Discord tournée : {e}")
 
 # ─── Tournée de publication dans les groupes ─────────────────────────────────
-async def publish_round(client: TelegramClient, annonces: list[str], annonce_index: int, target_groups: list[str]):
-    if not annonces or not target_groups:
+async def publish_round(client: TelegramClient, poste_name: str, annonce: str, target_groups: list[str]):
+    if not annonce or not target_groups:
         log.warning("⚠️ Aucune annonce ou aucun groupe disponible.")
-        return annonce_index + 1, "Inconnu", "", 0, 0
+        return 0, 0
 
-    idx = annonce_index % len(annonces)
-    annonce = annonces[idx]
-    poste_name = TYPES_POSTES[idx % len(TYPES_POSTES)][0]
-
-    log.info(f"📢 Début tournée [{poste_name}] ({idx+1}/{len(annonces)}) vers {len(target_groups)} groupe(s)...")
+    log.info(f"📢 Début tournée [{poste_name}] vers {len(target_groups)} groupe(s)...")
 
     # Notification Discord immédiate du début de tournée
     notify_discord_round_start(poste_name, len(target_groups), annonce)
@@ -428,7 +448,7 @@ async def publish_round(client: TelegramClient, annonces: list[str], annonce_ind
             await asyncio.sleep(3)
 
     log.info(f"🏁 Tournée terminée : {succes} envoyés, {erreurs} erreurs.")
-    return annonce_index + 1, poste_name, annonce, succes, erreurs
+    return succes, erreurs
 
 # ─── Boucle principale (20 minutes fixes) ────────────────────────────────────
 async def main_loop():
@@ -439,7 +459,8 @@ async def main_loop():
     log.info(f"   Compte         : {PHONE_NUMBER}")
     log.info(f"   Groupes cibles : {len(target_groups)} groupes chargés")
     log.info(f"   Intervalle     : {POST_INTERVAL}s (20 minutes fixes)")
-    log.info(f"   Moteur IA      : FreeLLM & Gemini API intégrés")
+    log.info(f"   Mode           : 100% VA · 5 Modèles Officiels en Rotation Aléatoire")
+    log.info(f"   Contact        : @rcruting_bot")
     log.info("=" * 65)
 
     client = init_telethon_client()
@@ -458,15 +479,17 @@ async def main_loop():
     # Notification Discord au démarrage
     notify_discord_startup(PHONE_NUMBER, me_title, len(target_groups))
 
-    annonces = load_annonces()
-    annonce_index = 0
-
     while True:
         now = datetime.now()
 
+        # Sélection aléatoire de l'un des 5 modèles officiels VA
+        template_obj = get_next_random_template()
+        poste_name = template_obj["poste"]
+        annonce = template_obj["texte"]
+
         # Envoi de la tournée
-        annonce_index, poste_name, annonce, succes, erreurs = await publish_round(
-            client, annonces, annonce_index, target_groups
+        succes, erreurs = await publish_round(
+            client, poste_name, annonce, target_groups
         )
 
         # ⏱️ Pause de 20 minutes fixes (1200 secondes)
