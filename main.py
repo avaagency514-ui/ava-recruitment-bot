@@ -434,13 +434,14 @@ def notify_discord_error(msg: str):
 def notify_discord_round(poste_name: str, annonce_text: str, total_targets: int, success_count: int, error_count: int, next_run_dt):
     if not DISCORD_BOT_TOKEN or not DISCORD_LOG_CHANNEL:
         return
+    is_success = success_count > 0
     embed = {
-        "title": "📢 Annonce de Recrutement Publiée !",
-        "description": "Une nouvelle tournée de publication automatique vient d'être envoyée avec succès sur Telegram.",
-        "color": 0x3498DB,  # Bleu
+        "title": "📢 Annonce de Recrutement Publiée !" if is_success else "⚠️ Tournée Interrompue ou Échouée",
+        "description": "Une nouvelle tournée de publication automatique vient d'être envoyée avec succès sur Telegram." if is_success else "La tournée a été interrompue ou n'a pu envoyer aucun message (problème d'authentification ou cible inaccessible).",
+        "color": 0x3498DB if is_success else 0xE74C3C,  # Bleu si succès, Rouge si échec
         "fields": [
             {"name": "🎯 Poste ciblé", "value": f"**{poste_name}**", "inline": True},
-            {"name": "📊 Bilan d'envoi", "value": f"✅ **{success_count}** envoyés · ⚠️ **{error_count}** ignorés (sur {total_targets} cibles)", "inline": True},
+            {"name": "📊 Bilan d'envoi", "value": f"✅ **{success_count}** envoyés · ⚠️ **{error_count}** erreurs (sur {total_targets} cibles)", "inline": True},
             {"name": "⏱️ Prochaine tournée", "value": f"Dans 20 minutes (à **{next_run_dt.strftime('%H:%M:%S')}**)", "inline": False},
             {"name": "📝 Texte publié (Aperçu)", "value": f"```{annonce_text[:850]}```", "inline": False}
         ],
@@ -503,12 +504,16 @@ async def publish_round(client: TelegramClient, poste_name: str, annonce: str, t
             erreurs += 1
             err_msg = str(e)
             log.warning(f"  ⚠️ Erreur envoi {entry} : {err_msg[:100]}")
-            if "disconnected" in err_msg.lower() or "auth" in err_msg.lower():
+            if "auth" in err_msg.lower() or "session" in err_msg.lower() or "two different ip" in err_msg.lower():
+                log.critical(f"❌ Session Telegram révoquée ou en conflit ({err_msg[:100]}). Arrêt immédiat de la tournée.")
+                notify_discord_error(f"❌ **Session Telegram révoquée / Conflit IP** : `{err_msg[:120]}`\nArrêt immédiat de la tournée. Veuillez regénérer la session.")
+                break
+            if "disconnected" in err_msg.lower():
                 consecutive_disconnects += 1
                 if not await ensure_connected(client):
                     if consecutive_disconnects >= 3:
-                        log.critical("❌ Session Telegram révoquée ou déconnectée. Arrêt de la tournée.")
-                        notify_discord_error(f"⚠️ Alerte Telegram : Session déconnectée ({err_msg[:80]}). Reconnexion requise.")
+                        log.critical("❌ Session Telegram déconnectée. Arrêt de la tournée.")
+                        notify_discord_error(f"⚠️ Alerte Telegram : Déconnexion répétée ({err_msg[:80]}).")
                         break
             await asyncio.sleep(3)
 
