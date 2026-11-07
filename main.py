@@ -261,10 +261,37 @@ Je cherche des profils expérimentés pour gérer et scaler du trafic via X (Twi
 📩 Pour postuler :
 
 DM @rcruting_bot pour postuler ! 📈"""
+    },
+    {
+        "id": "chatter",
+        "poste": "Chatter Expérimenté(e)",
+        "texte": """🔥 RECRUTEMENT CHATTER EXPÉRIMENTÉ(E) — REJOINS NOTRE AGENCE !
+
+Tu maîtrises l'art de la discussion, de l'engagement et de la conversion ? Notre agence recrute des chatters motivés et talentueux pour dynamiser ses comptes.
+
+💰 RÉMUNÉRATION & AVANTAGES :
+• Rémunération au pourcentage selon tes performances
+• Jusqu'à 15% de commission + primes de résultats 🤑
+• Paiement toutes les 2 semaines (tous les 14 jours) 📆
+• Règlement sécurisé en Crypto USDT 💵
+• Possibilités d'évolution rapide au sein de l'agence
+
+💼 PROFIL RECHERCHÉ :
+• Expérience requise en tant que chatter (OFM / réseaux sociaux)
+• Excellente aisance relationnelle et rédactionnelle
+• Sérieux, autonome, rigoureux et disponible
+• Ordinateur et/ou smartphone avec connexion stable
+
+🎓 ACCOMPAGNEMENT :
+• Process rodés et organisation d'équipe claire
+• Suivi personnalisé par les Managers
+
+📩 Pour postuler :
+DM @rcruting_bot avec une courte présentation de ton parcours ! 📈"""
     }
 ]
 
-# Tirage aléatoire sans répétition immédiate (deck mélangé)
+# Tirage aléatoire sans répétition immédiate (deck mélangé de 6 postes)
 current_deck = []
 
 def get_next_random_template():
@@ -272,7 +299,7 @@ def get_next_random_template():
     if not current_deck:
         current_deck = VA_OFFICIAL_TEMPLATES.copy()
         random.shuffle(current_deck)
-        log.info("🎲 Nouveau deck de 5 annonces VA mélangé pour la diffusion aléatoire.")
+        log.info("🎲 Nouveau deck de 6 annonces de recrutement mélangé pour la diffusion aléatoire.")
     return current_deck.pop()
 
 # ─── Client Telethon ─────────────────────────────────────────────────────────
@@ -336,7 +363,7 @@ def notify_discord_startup(phone: str, me_name: str, total_groups: int):
         "fields": [
             {"name": "👥 Groupes cibles", "value": f"**{total_groups}** groupes chargés", "inline": True},
             {"name": "⏱️ Cadence", "value": "Toutes les **20 minutes fixes**", "inline": True},
-            {"name": "🎲 Rotation", "value": "5 modèles VA officiels (aléatoire)", "inline": True}
+            {"name": "🎲 Rotation", "value": "6 modèles officiels (5 VA + 1 Chatter en aléatoire)", "inline": True}
         ],
         "footer": {"text": "AVA Agency — Bot Recrutement Telethon • Salon #log-rcrutement"},
         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -459,7 +486,7 @@ async def main_loop():
     log.info(f"   Compte         : {PHONE_NUMBER}")
     log.info(f"   Groupes cibles : {len(target_groups)} groupes chargés")
     log.info(f"   Intervalle     : {POST_INTERVAL}s (20 minutes fixes)")
-    log.info(f"   Mode           : 100% VA · 5 Modèles Officiels en Rotation Aléatoire")
+    log.info(f"   Mode           : 6 Modèles Officiels (5 VA + 1 Chatter) en Rotation Aléatoire")
     log.info(f"   Contact        : @rcruting_bot")
     log.info("=" * 65)
 
