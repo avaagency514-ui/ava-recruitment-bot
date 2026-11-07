@@ -114,14 +114,17 @@ VA_OFFICIAL_TEMPLATES = [
     {
         "id": "insta",
         "poste": "VA Instagram",
-        "texte": """📢 RECRUTEMENT – INSTAGRAM !
+        "texte": """📢 RECRUTEMENT – INSTAGRAM (MARCHÉ FR 🇫🇷) !
 
 Tu souhaites travailler à distance directement depuis ton smartphone ? Nous recherchons de nouveaux profils pour développer notre équipe spécialisée dans la gestion et le développement de comptes Instagram !
+
+🎯 TRAFIC STRICTEMENT FRANÇAIS (FR 🇫🇷) :
+Marché 100% France uniquement.
 
 📩 Contact : @rcruting_bot 📩 
 
 💰 RÉMUNÉRATION & MODALITÉS :
-- Rémunération au sub (au nombre d'abonnés qualifiés générés) 🎯
+- Rémunération au sub (au nombre d'abonnés français qualifiés générés) 🎯
 - Jusqu'à 350 USDT selon tes performances
 - Paiement toutes les 2 semaines 📆
 - Règlement sécurisé en Crypto USDT 💵
@@ -164,8 +167,8 @@ Plus tu génères de subs (abonnés qualifiés), plus tu gagnes. Possibilité de
 - Paiement par Crypto USDT (TRC-20 / Solana).
 - Rémunération 100% basée sur les subs générés.
 
-⚠️ CRITÈRES DE QUALITÉ :
-Seuls les subs issus de zones ciblées (USA, UK, Canada, Europe) comptent. Tracking transparent et vérifiable en direct.
+⚠️ CRITÈRES DE QUALITÉ & TRAFIC :
+Trafic STRICTEMENT FRANCE 🇫🇷 : seuls les abonnés français comptent. Tracking transparent et vérifiable en direct.
 
 📱 MATÉRIEL :
 Smartphone + 4G/5G suffisent. Vidéos, formation et lien personnel fournis par l'agence.
@@ -184,7 +187,7 @@ Smartphone + 4G/5G suffisent. Vidéos, formation et lien personnel fournis par l
 💰 Rémunération au sub (nombre d'abonnements qualifiés)
 💵 Payé toutes les 2 semaines en Crypto USDT
 ✅ iPhone jailbreaké obligatoire
-🇺🇸 Marché américain à fort volume
+🇫🇷 Trafic STRICTEMENT FRANCE 🇫🇷 (Marché français uniquement)
 ⏰ 1 à 2h par jour seulement
 📈 Outils automatisés et accompagnement fournis
 
@@ -197,8 +200,10 @@ Smartphone + 4G/5G suffisent. Vidéos, formation et lien personnel fournis par l
 
 Nous recrutons des personnes motivées pour gérer des comptes Twitter / X : création de comptes, publication de contenu, interactions et chatting.
 
+🎯 Cible : Trafic STRICTEMENT FRANCE 🇫🇷
+
 💰 RÉMUNÉRATION AU NOMBRE D'ABONNEMENTS (SUBS) :
-• Rémunération basée sur le nombre de subs générés
+• Rémunération basée sur le nombre de subs français générés
 • Paiement toutes les 2 semaines
 • Règlement en Crypto USDT
 • Tracking clair, fiable et transparent
@@ -211,7 +216,7 @@ Nous recrutons des personnes motivées pour gérer des comptes Twitter / X : cr�
 
 🎯 PROFIL RECHERCHÉ :
 • Ouvert à tous (débutants motivés acceptés)
-• À l’aise avec Twitter / X et la communication écrite
+• À l’aise avec Twitter / X et la communication écrite en français
 • Sérieux, motivé et régulier
 • Formation complète fournie
 
@@ -223,6 +228,8 @@ Nous recrutons des personnes motivées pour gérer des comptes Twitter / X : cr�
         "texte": """🚀 RECRUTEMENT — VA X (TWITTER) & THREADS 🚀
 
 Je cherche des profils expérimentés pour gérer et scaler du trafic via X (Twitter) + Threads. 📱&📱
+
+🎯 Trafic STRICTEMENT FRANCE 🇫🇷 (audience 100% française).
 
 ⚡️ Pourquoi nous rejoindre :
 – Stratégie déjà prête + process clair et rodé
@@ -243,7 +250,7 @@ Je cherche des profils expérimentés pour gérer et scaler du trafic via X (Twi
 
 ---
 💵 Rémunération & Paiement :
-– Rémunération au sub (selon le volume d'abonnés et de trafic converti)
+– Rémunération au sub (selon le volume d'abonnés français convertis)
 – Paiement garanti toutes les 2 semaines
 – Règlement en Crypto USDT
 – Évolution possible + cumul avec d’autres missions au sein de l'agence
@@ -269,6 +276,8 @@ DM @rcruting_bot pour postuler ! 📈"""
 
 Tu maîtrises l'art de la discussion, de l'engagement et de la conversion ? Notre agence recrute des chatters motivés et talentueux pour dynamiser ses comptes.
 
+🎯 Cible : Trafic STRICTEMENT FRANCE 🇫🇷 (conversations en français).
+
 💰 RÉMUNÉRATION & AVANTAGES :
 • Rémunération au pourcentage selon tes performances
 • Jusqu'à 15% de commission + primes de résultats 🤑
@@ -278,7 +287,7 @@ Tu maîtrises l'art de la discussion, de l'engagement et de la conversion ? Notr
 
 💼 PROFIL RECHERCHÉ :
 • Expérience requise en tant que chatter (OFM / réseaux sociaux)
-• Excellente aisance relationnelle et rédactionnelle
+• Excellente aisance relationnelle et orthographe française irréprochable
 • Sérieux, autonome, rigoureux et disponible
 • Ordinateur et/ou smartphone avec connexion stable
 
